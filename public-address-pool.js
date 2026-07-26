@@ -1,5 +1,5 @@
 export const PUBLIC_ADDRESS_SOURCE =
-	'https://raw.githubusercontent.com/LancelotRar/best-cf-ips/main/best-cf-ipv4.txt';
+	'https://raw.githubusercontent.com/254057007-eng/best-cf-ips-personal/main/best-cf-ipv4.txt';
 export const PUBLIC_ADDRESS_CACHE_KEY = 'public-address-pool.v1.json';
 export const PUBLIC_ADDRESS_UPDATE_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
