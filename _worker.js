@@ -464,6 +464,47 @@ export default {
 						if (订阅类型 === 'mixed' && (!ua.includes('mozilla') || url.searchParams.has('b64') || url.searchParams.has('base64'))) 订阅内容 = btoa(订阅内容);
 
 						if (订阅类型 === 'singbox') {
+							// 附加小号面板选源节点到 singbox 输出
+							if (env.SYNC_SUB) {
+								try {
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': 'v2rayNG/1.10' } });
+									if (同步响应.ok) {
+										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
+										if (同步文本) {
+											const 同步节点列表 = atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://'));
+											if (同步节点列表.length) {
+												try {
+													const sbConfig = JSON.parse(订阅内容);
+													if (Array.isArray(sbConfig.outbounds)) {
+														const 现有标签 = new Set(sbConfig.outbounds.map(o => o?.tag));
+														for (const 行 of 同步节点列表) {
+															try {
+																const u = new URL(行.trim());
+																const 查询 = u.searchParams;
+																const 标签 = (u.hash ? decodeURIComponent(u.hash.slice(1)) : u.hostname) + '[面板]';
+																if (现有标签.has(标签)) continue;
+																const 节点 = {
+																	type: 'vless',
+																	tag: 标签,
+																	server: u.hostname,
+																	server_port: u.port || 443,
+																	uuid: u.username || config_JSON.UUID,
+																	packet_encoding: 'xudp',
+																	tls: 查询.get('security') === 'tls' ? { enabled: true, server_name: 查询.get('sni') || 查询.get('host') || u.hostname, utls: { enabled: true, fingerprint: 查询.get('fp') || 'chrome' } } : undefined,
+																	transport: { type: 查询.get('type') || 'ws', path: 查询.get('path') || '/', headers: 查询.get('host') ? { Host: 查询.get('host') } : undefined }
+																};
+																sbConfig.outbounds.push(节点);
+																现有标签.add(标签);
+															} catch (_) { }
+														}
+														订阅内容 = JSON.stringify(sbConfig);
+													}
+												} catch (_) { }
+											}
+										}
+									}
+								} catch (e) { console.error('SYNC_SUB_SINGBOX_ERROR', e); }
+							}
 							订阅内容 = await Singbox订阅配置文件热补丁(订阅内容, config_JSON);
 							responseHeaders["content-type"] = 'application/json; charset=utf-8';
 						} else if (订阅类型 === 'clash') {
