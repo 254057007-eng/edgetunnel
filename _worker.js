@@ -508,6 +508,41 @@ export default {
 							订阅内容 = await Singbox订阅配置文件热补丁(订阅内容, config_JSON);
 							responseHeaders["content-type"] = 'application/json; charset=utf-8';
 						} else if (订阅类型 === 'clash') {
+							// 附加小号面板选源节点到 clash 输出
+							if (env.SYNC_SUB) {
+								try {
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': 'v2rayNG/1.10' } });
+									if (同步响应.ok) {
+										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
+										if (同步文本) {
+											const 同步节点列表 = atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://'));
+											if (同步节点列表.length) {
+												const 附加节点行 = [];
+												for (const 行 of 同步节点列表) {
+													try {
+														const u = new URL(行.trim());
+														const 查询 = u.searchParams;
+														const 名称 = (u.hash ? decodeURIComponent(u.hash.slice(1)) : u.hostname) + '[面板]';
+														const 传输 = 查询.get('type') || 'ws';
+														const 路径 = 查询.get('path') || '/';
+														const host = 查询.get('host') || u.hostname;
+														const wsOpts = 传输 === 'ws' ? `, ws-opts: {path: ${JSON.stringify(路径)}, headers: {Host: ${JSON.stringify(host)}}}` : '';
+														const 行文本 = `  - {name: ${JSON.stringify(名称)}, type: vless, server: ${JSON.stringify(u.hostname)}, port: ${u.port || 443}, uuid: ${JSON.stringify(u.username || config_JSON.UUID)}, udp: true, tls: true, servername: ${JSON.stringify(查询.get('sni') || host)}, client-fingerprint: ${JSON.stringify(查询.get('fp') || 'chrome')}, network: ${传输}${wsOpts}}`;
+														附加节点行.push(行文本);
+													} catch (_) { }
+												}
+												if (附加节点行.length) {
+													if (订阅内容.includes('proxies:')) {
+														订阅内容 = 订阅内容.replace(/^(proxies:\s*\n)/m, '$1' + 附加节点行.join('\n') + '\n');
+													} else {
+														订阅内容 = 订阅内容 + '\nproxies:\n' + 附加节点行.join('\n') + '\n';
+													}
+												}
+											}
+										}
+									}
+								} catch (e) { console.error('SYNC_SUB_CLASH_ERROR', e); }
+							}
 							订阅内容 = Clash订阅配置文件热补丁(订阅内容, config_JSON);
 							responseHeaders["content-type"] = 'application/x-yaml; charset=utf-8';
 						}
