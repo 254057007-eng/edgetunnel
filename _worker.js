@@ -433,6 +433,19 @@ export default {
 						}
 
 						if (!ua.includes('subconverter') && 用户客户端请求订阅) {
+							// 附加小号面板选源节点（SYNC_SUB 为小号快速订阅链接）
+							if (env.SYNC_SUB && 订阅类型 === 'mixed') {
+								try {
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': 'v2rayNG/1.10' } });
+									if (同步响应.ok) {
+										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
+										if (同步文本) {
+											const 同步节点列表 = atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://'));
+											if (同步节点列表.length) 订阅内容 += '\n' + 同步节点列表.join('\n');
+										}
+									}
+								} catch (e) { console.error('SYNC_SUB_FETCH_ERROR', e); }
+							}
 							const 打乱后HOSTS = [...config_JSON.HOSTS].sort(() => Math.random() - 0.5);
 							let 替换域名计数 = 0, 当前随机HOST = null;
 							订阅内容 = 订阅内容
