@@ -48,7 +48,7 @@ export default {
 				return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
 			}
 			try {
-				const 地址池 = await loadPublicAddressPool(env);
+				const 地址池 = await loadPublicAddressPool(env, { force: true });
 				return new Response(JSON.stringify(publicAddressPoolMetadata(地址池)), {
 					status: 200,
 					headers: {
