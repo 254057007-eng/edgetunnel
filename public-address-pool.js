@@ -63,8 +63,9 @@ function regionCode(note) {
 	return match ? match[1] : 'ZZ';
 }
 
-// 精简：仅保留常用地区（白名单），去掉 US 及零散地区
+// 精简：常用地区全保留；US 仅保留前 30 个；其余地区丢弃
 const REGION_WHITELIST = new Set(['HK', 'JP', 'SG', 'KR', 'TW']);
+const REGION_LIMIT = { US: 30 };
 
 export function parsePublicAddressPool(text) {
 	const unique = new Map();
@@ -111,8 +112,16 @@ export function parsePublicAddressPool(text) {
 		});
 	}
 
+	// 先按地区分组计数，对有限额的地区（US）只保留前 N 个
+	const regionCount = new Map();
 	const entries = Array.from(unique.values())
-		.filter(entry => REGION_WHITELIST.has(entry.region))
+		.filter(entry => {
+			const count = (regionCount.get(entry.region) || 0) + 1;
+			const limit = REGION_LIMIT[entry.region];
+			if (limit !== undefined && count > limit) return false;
+			regionCount.set(entry.region, count);
+			return REGION_WHITELIST.has(entry.region) || entry.region === 'US';
+		})
 		.sort((left, right) =>
 		ipv4ToInteger(left.server) - ipv4ToInteger(right.server)
 		|| left.port - right.port
