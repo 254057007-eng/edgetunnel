@@ -24,7 +24,22 @@
 - 🛠️ **部署灵活**：完整适配 CF Workers 及 CF Pages (GitHub / 上传)。
 - 🔄 **订阅系统**：内置自动订阅生成及混淆转换，适配主流客户端（Clash, Sing-box, Surge 等）。
 - ⚡ **性能加速**：支持自定义 ProxyIP、SOCKS5/HTTP 链式代理及优选 API，优化网络延迟。
+- ⚡ **托管地址池**：生产分支从个人聚合源读取候选入口，按地区筛选并与小号面板节点汇聚。
 - 🌐 **多台适配**：完美适配 Windows, Android, iOS, MacOS 及各种软路由固件。
+
+---
+
+## 当前生产地址池与双号汇聚
+
+本生产分支在最新上游功能基础上保留以下定制：
+
+- 地址池源：`254057007-eng/best-cf-ips-personal/main/best-cf-ipv4.txt`；
+- 每 3 小时刷新，使用单一 KV 快照；刷新失败、空结果或数量异常下降时保留最后成功快照；
+- 地区策略：HK/JP/SG/KR/TW 全保留，US 最多 30 个；
+- 大号订阅通过 `SYNC_SUB` 汇聚小号面板选源节点，并同步适配 mixed、Clash 与 Sing-box 输出；
+- 地址池状态：`/.well-known/address-pool/status`；刷新入口仅接受 POST。
+
+地址池只提供入口 IP、端口和地区备注；UUID、Host、SNI、路径及协议参数仍由当前 Pages/KV 配置生成。敏感配置不得写入仓库。
 
 ---
 

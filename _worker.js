@@ -1,4 +1,10 @@
-﻿const Version = '2026-09-22 20:01:17';
+import {
+	loadPublicAddressPool,
+	publicAddressPoolMetadata,
+	readPublicAddressPoolStatus,
+} from './public-address-pool.js';
+
+const Version = '2026-09-22 20:01:17';
 let config_JSON, 缓存SOCKS5白名单 = null, 调试日志打印 = false;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
@@ -25,6 +31,20 @@ export default {
 			请求URL文本 = 请求URL主体部分.replace(/%3f/i, '?') + 请求URL锚点部分;
 		}
 		const url = new URL(请求URL文本);
+		const 地址池接口路径 = url.pathname.toLowerCase();
+		if (地址池接口路径 === '/.well-known/address-pool/status') {
+			if (request.method !== 'GET') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'GET' } });
+			return new Response(JSON.stringify(await readPublicAddressPoolStatus(env)), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store' } });
+		}
+		if (地址池接口路径 === '/.well-known/address-pool/refresh') {
+			if (request.method !== 'POST') return new Response('Method Not Allowed', { status: 405, headers: { Allow: 'POST' } });
+			try {
+				const 地址池 = await loadPublicAddressPool(env, { force: true });
+				return new Response(JSON.stringify(publicAddressPoolMetadata(地址池)), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store' } });
+			} catch {
+				return new Response(JSON.stringify({ available: false, status: 'unavailable', error: 'public_address_pool_unavailable' }), { status: 503, headers: { 'Content-Type': 'application/json;charset=utf-8', 'Cache-Control': 'no-store' } });
+			}
+		}
 		const UA = request.headers.get('User-Agent') || 'null';
 		const upgradeHeader = (request.headers.get('Upgrade') || '').toLowerCase(), contentType = (request.headers.get('content-type') || '').toLowerCase();
 		const 管理员密码 = env.ADMIN || env.admin || env.PASSWORD || env.password || env.pswd || env.TOKEN || env.KEY || env.UUID || env.uuid;
@@ -352,51 +372,11 @@ export default {
 						if (订阅类型 === 'mixed') {
 							const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
 							let 完整优选IP = [], 其他节点LINK = '', 反代IP池 = [];
-
-							if (!url.searchParams.has('sub') && config_JSON.优选订阅生成.local) { // 本地生成订阅
-								const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (
-									await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
-								)[0] : await env.KV.get('ADD.txt') ? await 整理成数组(await env.KV.get('ADD.txt')) : (
-									await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量, config_JSON.优选订阅生成.本地IP库.指定端口)
-								)[0];
-								const 优选API = [], 优选IP = [], 其他节点 = [];
-								for (const 元素 of 完整优选列表) {
-									if (元素.toLowerCase().startsWith('sub://')) {
-										优选API.push(元素);
-									} else {
-										const 备注位置 = 元素.indexOf('#');
-										const 地址部分 = 备注位置 > -1 ? 元素.slice(0, 备注位置) : 元素;
-										const 备注部分 = 备注位置 > -1 ? 元素.slice(备注位置) : '';
-										const subMatch = 元素.match(/sub\s*=\s*([^\s&#]+)/i);
-										if (subMatch && subMatch[1].trim().includes('.')) {
-											const 优选IP作为反代IP = 元素.toLowerCase().includes('proxyip=true');
-											if (优选IP作为反代IP) 优选API.push('sub://' + subMatch[1].trim() + "?proxyip=true" + (元素.includes('#') ? ('#' + 元素.split('#')[1]) : ''));
-											else 优选API.push('sub://' + subMatch[1].trim() + (元素.includes('#') ? ('#' + 元素.split('#')[1]) : ''));
-										} else if (地址部分.toLowerCase().startsWith('https://')) {
-											优选API.push(元素);
-										} else if (地址部分.toLowerCase().includes('://')) {
-											if (元素.includes('#')) {
-												const 地址备注分离 = 元素.split('#');
-												其他节点.push(地址备注分离[0] + '#' + encodeURIComponent(decodeURIComponent(地址备注分离[1])));
-											} else 其他节点.push(元素);
-										} else {
-											if (地址部分.includes('*')) {
-												优选IP.push(替换星号为随机字符(地址部分) + 备注部分);
-											} else 优选IP.push(元素);
-										}
-									}
-								}
-								const 请求优选API内容 = await 请求优选API(优选API, '443');
-								const 合并其他节点数组 = [...new Set(其他节点.concat(请求优选API内容[1]))];
-								其他节点LINK = 合并其他节点数组.length > 0 ? 合并其他节点数组.join('\n') + '\n' : '';
-								const 优选API的IP = 请求优选API内容[0];
-								反代IP池 = 请求优选API内容[3] || [];
-								完整优选IP = [...new Set(优选IP.concat(优选API的IP))];
-							} else { // 优选订阅生成器
-								let 优选订阅生成器HOST = url.searchParams.get('sub') || config_JSON.优选订阅生成.SUB;
-								const [优选生成器IP数组, 优选生成器其他节点] = await 获取优选订阅生成器数据(优选订阅生成器HOST);
-								完整优选IP = 完整优选IP.concat(优选生成器IP数组);
-								其他节点LINK += 优选生成器其他节点;
+							try {
+								const 地址池 = await loadPublicAddressPool(env);
+								完整优选IP = 地址池.entries.map(({ server, port, name }) => `${server}:${port}#${name}`);
+							} catch {
+								return new Response('公开地址池暂时不可用', { status: 503, headers: { 'Content-Type': 'text/plain;charset=utf-8' } });
 							}
 							const ECHLINK参数 = config_JSON.ECH ? `&ech=${encodeURIComponent((config_JSON.ECHConfig.SNI ? config_JSON.ECHConfig.SNI + '+' : '') + config_JSON.ECHConfig.DNS)}` : '';
 							const isLoonOrSurge = ua.includes('loon') || ua.includes('surge');
@@ -467,6 +447,18 @@ export default {
 							}
 						}
 
+						if (env.SYNC_SUB && 订阅类型 === 'mixed' && 用户客户端请求订阅) {
+							try {
+								const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': EDT_UA } });
+								if (同步响应.ok) {
+									const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
+									if (同步文本) {
+										const 同步节点列表 = atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://'));
+										if (同步节点列表.length) 订阅内容 += '\n' + 同步节点列表.join('\n');
+									}
+								}
+							} catch (e) { console.error('SYNC_SUB_FETCH_ERROR', e); }
+						}
 						if (!ua.includes('subconverter') && 用户客户端请求订阅) {
 							const 打乱后HOSTS = [...config_JSON.HOSTS].sort(() => Math.random() - 0.5);
 							let 替换域名计数 = 0, 当前随机HOST = null;
@@ -486,9 +478,45 @@ export default {
 						if (订阅类型 === 'mixed' && (!ua.includes('mozilla') || url.searchParams.has('b64') || url.searchParams.has('base64'))) 订阅内容 = btoa(订阅内容);
 
 						if (订阅类型 === 'singbox') {
+							if (env.SYNC_SUB) {
+								try {
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': EDT_UA } });
+									if (同步响应.ok) {
+										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
+										const 同步节点列表 = 同步文本 ? atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://')) : [];
+										if (同步节点列表.length) {
+											try {
+												const sbConfig = JSON.parse(订阅内容), 现有标签 = new Set((sbConfig.outbounds || []).map(o => o?.tag));
+												if (Array.isArray(sbConfig.outbounds)) for (const 行 of 同步节点列表) try {
+													const u = new URL(行.trim()), 查询 = u.searchParams, 标签 = (u.hash ? decodeURIComponent(u.hash.slice(1)) : u.hostname) + '[面板]';
+													if (现有标签.has(标签)) continue;
+													sbConfig.outbounds.push({ type: 'vless', tag: 标签, server: u.hostname, server_port: Number(u.port || 443), uuid: u.username || config_JSON.UUID, packet_encoding: 'xudp', tls: 查询.get('security') === 'tls' ? { enabled: true, server_name: 查询.get('sni') || 查询.get('host') || u.hostname, utls: { enabled: true, fingerprint: 查询.get('fp') || 'chrome' } } : undefined, transport: { type: 查询.get('type') || 'ws', path: 查询.get('path') || '/', headers: 查询.get('host') ? { Host: 查询.get('host') } : undefined } });
+													现有标签.add(标签);
+												} catch (_) { }
+												订阅内容 = JSON.stringify(sbConfig);
+											} catch (_) { }
+										}
+									}
+								} catch (e) { console.error('SYNC_SUB_SINGBOX_ERROR', e); }
+							}
 							订阅内容 = await Singbox订阅配置文件热补丁(订阅内容, config_JSON);
 							responseHeaders["content-type"] = 'application/json; charset=utf-8';
 						} else if (订阅类型 === 'clash') {
+							if (env.SYNC_SUB) {
+								try {
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': EDT_UA } });
+									if (同步响应.ok) {
+										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, ''), 附加节点行 = [];
+										const 同步节点列表 = 同步文本 ? atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://')) : [];
+										for (const 行 of 同步节点列表) try {
+											const u = new URL(行.trim()), 查询 = u.searchParams, 名称 = (u.hash ? decodeURIComponent(u.hash.slice(1)) : u.hostname) + '[面板]', 传输 = 查询.get('type') || 'ws', 路径 = 查询.get('path') || '/', host = 查询.get('host') || u.hostname;
+											const wsOpts = 传输 === 'ws' ? `, ws-opts: {path: ${JSON.stringify(路径)}, headers: {Host: ${JSON.stringify(host)}}}` : '';
+											附加节点行.push(`  - {name: ${JSON.stringify(名称)}, type: vless, server: ${JSON.stringify(u.hostname)}, port: ${u.port || 443}, uuid: ${JSON.stringify(u.username || config_JSON.UUID)}, udp: true, tls: true, servername: ${JSON.stringify(查询.get('sni') || host)}, client-fingerprint: ${JSON.stringify(查询.get('fp') || 'chrome')}, network: ${传输}${wsOpts}}`);
+										} catch (_) { }
+										if (附加节点行.length) 订阅内容 = 订阅内容.includes('proxies:') ? 订阅内容.replace(/^(proxies:\s*\n)/m, '$1' + 附加节点行.join('\n') + '\n') : 订阅内容 + '\nproxies:\n' + 附加节点行.join('\n') + '\n';
+									}
+								} catch (e) { console.error('SYNC_SUB_CLASH_ERROR', e); }
+							}
 							订阅内容 = Clash订阅配置文件热补丁(订阅内容, config_JSON);
 							responseHeaders["content-type"] = 'application/x-yaml; charset=utf-8';
 						}
