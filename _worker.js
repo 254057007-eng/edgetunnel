@@ -449,7 +449,7 @@ export default {
 
 						if (env.SYNC_SUB && 订阅类型 === 'mixed' && 用户客户端请求订阅) {
 							try {
-								const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': EDT_UA } });
+								const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': 汇聚订阅_UA } });
 								if (同步响应.ok) {
 									const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
 									if (同步文本) {
@@ -480,7 +480,7 @@ export default {
 						if (订阅类型 === 'singbox') {
 							if (env.SYNC_SUB) {
 								try {
-									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': EDT_UA } });
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': 汇聚订阅_UA } });
 									if (同步响应.ok) {
 										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, '');
 										const 同步节点列表 = 同步文本 ? atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://')) : [];
@@ -504,7 +504,7 @@ export default {
 						} else if (订阅类型 === 'clash') {
 							if (env.SYNC_SUB) {
 								try {
-									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': EDT_UA } });
+									const 同步响应 = await fetch(env.SYNC_SUB, { headers: { 'User-Agent': 汇聚订阅_UA } });
 									if (同步响应.ok) {
 										const 同步文本 = (await 同步响应.text()).replace(/\s+/g, ''), 附加节点行 = [];
 										const 同步节点列表 = 同步文本 ? atob(同步文本).split('\n').filter(l => l.trim().startsWith('vless://')) : [];
