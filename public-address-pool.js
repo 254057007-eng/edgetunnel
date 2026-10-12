@@ -1,6 +1,6 @@
 export const PUBLIC_ADDRESS_SOURCE =
 	'https://raw.githubusercontent.com/254057007-eng/best-cf-ips-personal/main/best-cf-ipv4.txt';
-export const PUBLIC_ADDRESS_CACHE_KEY = 'public-address-pool.v2.json';
+export const PUBLIC_ADDRESS_CACHE_KEY = 'public-address-pool.v1.json';
 export const PUBLIC_ADDRESS_UPDATE_INTERVAL_MS = 3 * 60 * 60 * 1000;
 
 const DEFAULT_PORT = 443;
@@ -63,9 +63,9 @@ function regionCode(note) {
 	return match ? match[1] : 'ZZ';
 }
 
-// 生产订阅仅保留 JP/SG/US；同地区先选不同 /24，避免一个网段占满名额。
-const REGION_LIMIT = { JP: 8, SG: 8, US: 4 };
-const POOL_VERSION = 2;
+// 精简：常用地区全保留；US 仅保留前 30 个；其余地区丢弃
+const REGION_WHITELIST = new Set(['HK', 'JP', 'SG', 'KR', 'TW']);
+const REGION_LIMIT = { US: 30 };
 
 export function parsePublicAddressPool(text) {
 	const unique = new Map();
@@ -112,30 +112,17 @@ export function parsePublicAddressPool(text) {
 		});
 	}
 
-	// 两轮选择：先每 /24 一个入口，再填足各地区名额；不把IP顺序误称为速度排序。
-	const candidates = Array.from(unique.values());
-	const chosen = [];
-	for (const [region, limit] of Object.entries(REGION_LIMIT)) {
-		const regionCandidates = candidates.filter(entry => entry.region === region);
-		const usedSubnets = new Set();
-		const picked = new Set();
-		for (const entry of regionCandidates) {
-			if (picked.size >= limit) break;
-			const subnet = entry.server.split('.').slice(0, 3).join('.');
-			if (usedSubnets.has(subnet)) continue;
-			chosen.push(entry);
-			picked.add(`${entry.server}:${entry.port}`);
-			usedSubnets.add(subnet);
-		}
-		for (const entry of regionCandidates) {
-			if (picked.size >= limit) break;
-			const key = `${entry.server}:${entry.port}`;
-			if (picked.has(key)) continue;
-			chosen.push(entry);
-			picked.add(key);
-		}
-	}
-	const entries = chosen.sort((left, right) =>
+	// 先按地区分组计数，对有限额的地区（US）只保留前 N 个
+	const regionCount = new Map();
+	const entries = Array.from(unique.values())
+		.filter(entry => {
+			const count = (regionCount.get(entry.region) || 0) + 1;
+			const limit = REGION_LIMIT[entry.region];
+			if (limit !== undefined && count > limit) return false;
+			regionCount.set(entry.region, count);
+			return REGION_WHITELIST.has(entry.region) || entry.region === 'US';
+		})
+		.sort((left, right) =>
 		ipv4ToInteger(left.server) - ipv4ToInteger(right.server)
 		|| left.port - right.port
 		|| left.region.localeCompare(right.region)
@@ -160,7 +147,7 @@ export function parsePublicAddressPool(text) {
 function isUsableCache(cache) {
 	return Boolean(
 		cache
-		&& cache.version === POOL_VERSION
+		&& cache.version === 1
 		&& Number.isFinite(Date.parse(cache.updatedAt))
 		&& Array.isArray(cache.entries)
 		&& cache.entries.length > 0
@@ -246,7 +233,7 @@ export async function loadPublicAddressPool(env, options = {}) {
 		}
 
 		const next = {
-			version: POOL_VERSION,
+			version: 1,
 			source: PUBLIC_ADDRESS_SOURCE,
 			updatedAt: new Date(now).toISOString(),
 			upstreamUpdatedAt: parsed.upstreamUpdatedAt,
