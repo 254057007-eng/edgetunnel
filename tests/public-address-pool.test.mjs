@@ -41,16 +41,44 @@ test('parses the current upstream format, deduplicates and names deterministical
 	assert.equal(parsed.rawCount, 4);
 	assert.equal(parsed.invalidCount, 0);
 	assert.equal(parsed.duplicateCount, 1);
-	assert.equal(parsed.uniqueCount, 3);
+	assert.equal(parsed.uniqueCount, 2);
 	assert.equal(parsed.upstreamUpdatedAt, '2026-07-26 00:39');
 	assert.deepEqual(
 		parsed.entries.map(({ server, port, name }) => ({ server, port, name })),
 		[
-			{ server: '1.1.1.1', port: 443, name: '[池]HK-001' },
 			{ server: '8.8.8.8', port: 443, name: '[池]US-001' },
 			{ server: '9.9.9.9', port: 443, name: '[池]SG-001' },
 		],
 	);
+});
+
+test('enforces JP8 SG8 US4, excludes HK KR TW and spreads entries by /24', () => {
+	const lines = ['bestips updated at#2026-10-12 08:00'];
+	for (const region of ['HK', 'KR', 'TW', 'JP', 'SG', 'US']) {
+		for (let i = 1; i <= 12; i++) lines.push(`8.${['HK', 'KR', 'TW', 'JP', 'SG', 'US'].indexOf(region) + 1}.${i}.1:443#${region}`);
+	}
+	// Source order places two IPs from the same /24 before a different subnet.
+	lines.push('11.11.11.1:443#JP', '11.11.11.2:443#JP', '11.11.12.1:443#JP');
+	const result = parsePublicAddressPool(lines.join('\n'));
+	assert.equal(result.uniqueCount, 20);
+	assert.deepEqual(Object.fromEntries(['JP', 'SG', 'US'].map(region => [region, result.entries.filter(x => x.region === region).length])), { JP: 8, SG: 8, US: 4 });
+	assert.ok(result.entries.every(x => !['HK', 'KR', 'TW'].includes(x.region)));
+	for (const region of ['JP', 'SG', 'US']) {
+		const entries = result.entries.filter(x => x.region === region);
+		const subnets = entries.map(x => x.server.split('.').slice(0, 3).join('.'));
+		assert.equal(new Set(subnets).size, entries.length);
+	}
+});
+
+test('v2 cache does not read or overwrite the preserved v1 snapshot', async () => {
+	const old = JSON.stringify({ version: 1, updatedAt: new Date().toISOString(), uniqueCount: 1, entries: [{ server: '8.8.8.8', region: 'HK' }] });
+	const kv = memoryKv({ 'public-address-pool.v1.json': old });
+	const result = await loadPublicAddressPool({ KV: kv }, { fetchImpl: sourceResponse('8.8.8.8:443#HK\n9.9.9.9:443#JP') });
+	assert.equal(result.uniqueCount, 1);
+	assert.equal(result.entries[0].region, 'JP');
+	assert.equal(kv.writes.length, 1);
+	assert.equal(kv.writes[0].key, PUBLIC_ADDRESS_CACHE_KEY);
+	assert.equal(await kv.get('public-address-pool.v1.json'), old);
 });
 
 test('rejects private, loopback, link-local, multicast, reserved and invalid IPv4', () => {
@@ -87,7 +115,7 @@ test('rejects private, loopback, link-local, multicast, reserved and invalid IPv
 test('uses one atomic cache key and keeps a fresh cache without fetching', async () => {
 	const now = Date.parse('2026-07-26T03:00:00.000Z');
 	const cached = {
-		version: 1,
+		version: 2,
 		source: 'public',
 		updatedAt: new Date(now - 1_000).toISOString(),
 		upstreamUpdatedAt: null,
@@ -95,7 +123,7 @@ test('uses one atomic cache key and keeps a fresh cache without fetching', async
 		invalidCount: 0,
 		duplicateCount: 0,
 		uniqueCount: 1,
-		entries: [{ server: '1.1.1.1', port: 443, region: 'HK', regionNote: 'HK', name: '[池]HK-001' }],
+		entries: [{ server: '1.1.1.1', port: 443, region: 'JP', regionNote: 'JP', name: '[池]JP-001' }],
 	};
 	const kv = memoryKv({ [PUBLIC_ADDRESS_CACHE_KEY]: JSON.stringify(cached) });
 	let fetched = false;
@@ -114,7 +142,7 @@ test('uses one atomic cache key and keeps a fresh cache without fetching', async
 test('retains the last successful cache when refresh fails', async () => {
 	const now = Date.parse('2026-07-26T06:00:00.000Z');
 	const cached = {
-		version: 1,
+		version: 2,
 		source: 'public',
 		updatedAt: new Date(now - PUBLIC_ADDRESS_UPDATE_INTERVAL_MS - 1).toISOString(),
 		upstreamUpdatedAt: null,
@@ -122,7 +150,7 @@ test('retains the last successful cache when refresh fails', async () => {
 		invalidCount: 0,
 		duplicateCount: 0,
 		uniqueCount: 1,
-		entries: [{ server: '1.1.1.1', port: 443, region: 'HK', regionNote: 'HK', name: '[池]HK-001' }],
+		entries: [{ server: '1.1.1.1', port: 443, region: 'JP', regionNote: 'JP', name: '[池]JP-001' }],
 	};
 	const kv = memoryKv({ [PUBLIC_ADDRESS_CACHE_KEY]: JSON.stringify(cached) });
 	const result = await loadPublicAddressPool({ KV: kv }, {
@@ -144,7 +172,7 @@ test('rejects a refresh below 30 percent of the current pool', async () => {
 		name: `[池]US-${String(index + 1).padStart(3, '0')}`,
 	}));
 	const cached = {
-		version: 1,
+		version: 2,
 		source: 'public',
 		updatedAt: new Date(now - PUBLIC_ADDRESS_UPDATE_INTERVAL_MS - 1).toISOString(),
 		upstreamUpdatedAt: null,
@@ -170,10 +198,10 @@ test('stores a valid first refresh as one complete non-empty snapshot', async ()
 		now: Date.parse('2026-07-26T12:00:00.000Z'),
 		fetchImpl: sourceResponse('1.1.1.1:443#HK\n8.8.8.8:443#US'),
 	});
-	assert.equal(result.uniqueCount, 2);
+	assert.equal(result.uniqueCount, 1);
 	assert.equal(kv.writes.length, 1);
 	assert.equal(kv.writes[0].key, PUBLIC_ADDRESS_CACHE_KEY);
-	assert.equal(JSON.parse(kv.writes[0].value).entries.length, 2);
+	assert.equal(JSON.parse(kv.writes[0].value).entries.length, 1);
 });
 
 test('never creates an empty production cache', async () => {
@@ -193,7 +221,7 @@ test('builds a standard Base64 subscription for Shadowrocket from only the manag
 	const firstHash = nodeCrypto.createHash('md5').update(hostname + uuid).digest('hex');
 	const token = nodeCrypto.createHash('md5').update(firstHash.slice(7, 27)).digest('hex');
 	const pool = {
-		version: 1,
+		version: 2,
 		source: 'public',
 		updatedAt: new Date().toISOString(),
 		upstreamUpdatedAt: '2026-07-26 00:39',
@@ -202,7 +230,7 @@ test('builds a standard Base64 subscription for Shadowrocket from only the manag
 		duplicateCount: 0,
 		uniqueCount: 2,
 		entries: [
-			{ server: '1.1.1.1', port: 443, region: 'HK', regionNote: 'HK', name: '[池]HK-001' },
+			{ server: '1.1.1.1', port: 443, region: 'JP', regionNote: 'JP', name: '[池]JP-001' },
 			{ server: '8.8.8.8', port: 443, region: 'US', regionNote: 'US', name: '[池]US-001' },
 		],
 	};
@@ -273,6 +301,6 @@ test('builds a standard Base64 subscription for Shadowrocket from only the manag
 	assert.ok(nodes.some(node => node.includes('@8.8.8.8:443?')));
 	assert.ok(nodes.every(node => node.includes(`sni=${hostname}`)));
 	assert.ok(nodes.every(node => node.includes(`host=${hostname}`)));
-	assert.ok(nodes.some(node => decodeURIComponent(node).includes('[池]HK-001')));
+	assert.ok(nodes.some(node => decodeURIComponent(node).includes('[池]JP-001')));
 	assert.equal(kv.writes.filter(write => write.key === PUBLIC_ADDRESS_CACHE_KEY).length, 0);
 });

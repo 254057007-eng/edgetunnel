@@ -34,8 +34,8 @@
 本生产分支在最新上游功能基础上保留以下定制：
 
 - 地址池源：`254057007-eng/best-cf-ips-personal/main/best-cf-ipv4.txt`；
-- 每 3 小时刷新，使用单一 KV 快照；刷新失败、空结果或数量异常下降时保留最后成功快照；
-- 地区策略：HK/JP/SG/KR/TW 全保留，US 最多 30 个；
+- 每 3 小时刷新；精简池使用 `public-address-pool.v2.json` KV 快照，旧 `v1` 保留为回退；刷新失败、空结果或数量异常下降时保留最后成功快照；
+- 地区策略：JP 最多 8、SG 最多 8、US 最多 4；HK/KR/TW 不进入大号地址池；优先分散至不同 `/24` 网段；
 - 大号订阅通过 `SYNC_SUB` 汇聚小号面板选源节点，并同步适配 mixed、Clash 与 Sing-box 输出；
 - 地址池状态：`/.well-known/address-pool/status`；刷新入口仅接受 POST。
 
